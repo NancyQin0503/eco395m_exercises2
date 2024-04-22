@@ -1,0 +1,417 @@
+---
+title: "DM_PS4_all"
+author: "Fan Ye, Jinming Li, Xiangmeng Qin"
+date: "2024-04-22"
+output: pdf_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE)
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+library(cluster)
+library(reshape2)
+library(gridExtra)
+library(tidyr)
+library(dplyr)
+library(arules)
+library(arulesViz)
+library(knitr)
+library(ggcorrplot)
+library(RCurl)
+library(mosaic)
+library(magrittr)
+library(ggpubr)
+```
+
+
+# Question 1: Clustering and PCA
+
+## Clustering
+
+### Color of wines
+
+We standardizes the features of a wine dataset, excluding `quality` and `color`, and performs K-means clustering with two different numbers of centers (2 and 7). Then we visualizes the distribution of various chemical properties across actual wine colors using a box plot created with `ggplot2`.
+
+```{r 1, warning=FALSE, echo=FALSE, message=FALSE, alert=FALSE}
+wine_original = read.csv("https://raw.githubusercontent.com/jgscott/ECO395M/master/data/wine.csv")
+wine = wine_original %>% 
+  select(-quality,-color) %>% 
+  scale(center=TRUE, scale=TRUE)
+
+set.seed(123) 
+wine_clust_color = kmeans(wine, centers = 2, nstart = 25)
+wine_clust_quality = kmeans(wine, centers = 7, nstart = 25)
+
+wine_results = data.frame(wine, color = wine_original$color, 
+                          quality = wine_original$quality,
+                          clust_color = wine_clust_color$cluster,
+                          clust_quality = wine_clust_quality$cluster)
+wine_plot_data_clust <- cbind(wine_results[12:15], stack(wine_results[1:11]))
+ggplot(wine_plot_data_clust, aes(x = color, y = values, fill = ind)) +
+  geom_boxplot() +  
+  facet_wrap(~ind, scales = "free", ncol = 3) +  
+  labs(y = "Value of Chemicals", x = "Actual Color") +
+  theme_minimal()  
+```
+
+From the above results, it can be concluded that "colors can be most distinctly differentiated by volatile acidity and total sulfur dioxide." In the box plots, it is observed that these two chemical substances show significant differences in median values among different colors of wine.
+
+####  `volatile.acidity` and `total.sulfur.dioxide`
+
+We attempt to show in the scatter plot how two chemical components of wine data are clustered according to color, marked by different colors for different cluster groups (volatile acidity, total sulfur dioxide). This visually demonstrates how these chemical components are distributed across different clusters.
+
+```{r 2, warning=FALSE, echo=FALSE, message=FALSE, alert=FALSE}
+
+ggplot(wine_results, aes(x=volatile.acidity, y=total.sulfur.dioxide, color=factor(clust_color))) +
+  geom_point(size=2, alpha=0.7) +  
+  scale_color_manual(values=c("2"="red","1"="grey")) + 
+  labs(x="Volatile Acidity", y="Total Sulfur Dioxide", color=" Cluster") +  # 
+  theme_minimal() + 
+  theme(legend.position="bottom")  
+
+```
+The code is used to analyze and visualize how well the clustering algorithm classifies wines based on their chemical properties.
+Through clustering analysis, the first group has been identified as white wine, while the second group has been identified as red wine.
+
+The code below show the distribution of existing wine color classifications and chemical properties (volatile acidity and total sulfide) in the data set.
+
+```{r 3, warning=FALSE, echo=FALSE, message=FALSE, alert=FALSE}
+ggplot(wine_results, aes(x = volatile.acidity, y = total.sulfur.dioxide)) +
+  geom_point(aes(color = factor(color)), size = 2, alpha = 0.7) + 
+  scale_color_discrete(name = "Wine Color") + 
+  labs(x = "Volatile Acidity", y = "Total Sulfur Dioxide") +
+  theme_minimal() + 
+  theme(legend.position = "bottom")  
+
+```
+#### confusion matrix
+
+Using the confusion matrix to evaluate K-means can verify how the clusters align with the actual labels, especially in scenarios where color clusters are clustered, such as red wine versus white wine.
+
+```{r 4, warning=FALSE, echo=FALSE, message=FALSE, alert=FALSE}
+
+confusion_color <- table(
+  Actual = wine_results$color, 
+  Predicted = wine_results$clust_color
+)
+confusion_color <- confusion_color[c("red", "white"), ]
+confusion_color[2:1,]
+
+
+```
+
+The clustering accuracy of category 1 (white wine) is very high because the vast majority of white wines are correctly grouped into this category.
+Category 2 (red wine) also showed high clustering accuracy, with most red wines correctly identified.
+The relatively small number of misclassifications suggests that the K-means clustering algorithm's ability to distinguish between red and white wines on this dataset is fairly accurate.
+
+### Quality of wines
+
+This code is used to create a boxplot to visualize the distribution of chemical composition values for wines of different qualities, thereby helping the observer understand the chemical differences between wine qualities.
+
+
+```{r 5, warning=FALSE, echo=FALSE, message=FALSE, alert=FALSE}
+ggplot(wine_plot_data_clust, aes(x = factor(quality), y = values, fill = ind)) +
+  geom_boxplot(outlier.size = 1, outlier.colour = "gray") +  
+  facet_wrap(~ind,scales = "free", ncol = 3) +  # 
+  labs(x = "quality", y = "Value of Chemicals") +  
+  scale_fill_brewer(palette = "Dark2") +  # 
+  theme_minimal() + 
+  theme(
+    strip.background = element_blank(),  
+    strip.text.x = element_text(size = 12, face = "bold"),  
+  )
+```
+
+
+Based on the median values of these characteristics, we predict that at least density and alcohol can distinguish between high quality wines.
+
+### density and alcohol
+
+```{r 6, warning=FALSE, echo=FALSE, message=FALSE, alert=FALSE}
+clust_1 <- ggplot(wine_results) + 
+  geom_point(aes(x = density, y = alcohol, col = factor(clust_quality))) +
+  labs(color = "Generated Cluster") +
+  theme_minimal() + 
+  theme(legend.position = "right") 
+ggarrange(clust_1,
+          ncol = 1, nrow = 1, common.legend = TRUE,
+          legend = "right")
+
+clust_11 <- ggplot(wine_results) + 
+  geom_point(aes(x = density, y = alcohol, col = factor(quality))) +
+  labs(color = "Actual Quality") +
+  theme_minimal() +  
+  theme(legend.position = "right")  
+ggarrange(clust_11,
+          ncol = 1, nrow = 1, common.legend = TRUE,
+          legend = "right")
+
+```
+
+The distribution of the amount of wine in the cluster should be similar to the distribution in the real quality group, so that the cluster can classify the seven levels of quality. The lower the density, the higher the mass. The higher the alcohol, the higher the quality.
+
+## Principal component analysis
+
+## Color of wines
+
+###  load matrix of PCA
+
+We try to generate the load matrix of PCA
+
+```{r 7, echo=FALSE, message=FALSE, alert=FALSE}
+pc_wine = prcomp(wine, rank=11, scale=TRUE)
+loadings = pc_wine$rotation
+scores = pc_wine$x
+
+kable(head(loadings))
+
+```
+
+This load matrix tell us how much each variable contributes to the construction of each principal component. It can explain what aspects of the data each principal component represents. In general, the greater the absolute value of the weight, the greater the influence of the variable on the corresponding principal component.
+
+#### Statistical overview of the importance of principal components in PCA results
+
+
+```{r 9, warning=FALSE, echo=FALSE, message=FALSE, alert=FALSE}
+wine_PCA = prcomp(wine, rank = 11)
+summary(wine_PCA)
+wine_loadings = wine_PCA$rotation %>%
+  as.data.frame %>%
+  rownames_to_column('features')
+wine_scores = wine_PCA$x %>%
+  as.data.frame() %>%
+  rownames_to_column('wine_code')
+wine_results = wine_results %>% rownames_to_column('wine_code')
+## color ##
+wine_results = merge(wine_results, wine_scores, by = 'wine_code') 
+wine_plot_data_pca = melt(wine_results, id.var = colnames(wine_results)[1:16],
+                          variable.name = 'PC')
+```
+
+From this output, we typically focus on those points where the cumulative variance ratio approaches 1 to determine how many principal components need to be retained. In many cases, it is only when the cumulative variance ratio reaches a high value (such as 80% or 90%) that we believe we have captured most of the information in the data set. In this example, the first seven principal components already explain more than 90% of the variance in the data, so all 11 principal components may not be needed to capture most of the information in the data set.
+
+The first two components, which have the biggest variance, seem to distinguish the color of the wine well;
+
+#### Principal component analysis (PCA) results in the first and second principal components
+
+The first two components, which have the biggest variance, seem to distinguish the color of the wine well.
+
+```{r 10,warning=FALSE, echo=FALSE, message=FALSE, alert=FALSE}
+ggplot(wine_results) +
+  geom_point(aes(x=PC1, y=PC2, color=factor(color))) +
+  labs(y = "Principal Component 2", x="Principal Component 1",
+       color='Acutal Color') 
+```
+
+We confirmed that red and white wines can be distinguished using principal component 1 (PC1) : white wines tend to have higher PC1 scores than red wines.
+
+## Quality of wines
+
+### Exploring the relationship between wine quality and principal components
+
+```{r 11, warning=FALSE, echo=FALSE, message=FALSE, alert=FALSE}
+ggplot(wine_results) +
+  geom_point(aes(x=PC1, y=PC2, color=factor(quality))) +
+  labs(y = "Principal Component 1", 
+       x="Principal Component 2",
+       title = "PCA of Quality of Wine",
+       color='Acutal Quality') 
+```
+
+When different colors are used to signify the quality of wines, the clusters overlap significantly, rendering the PCA output inconclusive. It appears that PCA does not effectively differentiate between wines of higher and lower quality.
+
+## Conclusion
+
+To sum up, while PCA and clustering algorithms can differentiate red from white wines, it appears that neither method is effective at discerning wines of higher quality from those of lower quality.
+
+However, in k-means algorithm, two characteristics of density and alcohol content can be used to identify high-quality wine to a certain extent.
+
+
+# Question 2: Market segmentation
+
+## Step1: Data Preprocessing and Exploratory Data Analysis (EDA)
+```{r Correlations, echo=FALSE, message=FALSE, warning=FALSE}
+social_marketing <- read.csv("/Users/qxm/Desktop/Spring2024/Data Mining/HW_4/social_marketing.csv")
+
+social_marketing <- social_marketing[,-1]
+## Data Cleaning
+social_marketing[social_marketing < 0] <- 0 
+# remove outliers, particularly in the "spam" and "adult" categories
+cap <- function(x, n, na.rm = TRUE){
+  quantiles <- quantile(x, probs = c(0.99), na.rm = na.rm)
+  x[x > quantiles] <- quantiles
+  return(x)
+}
+social_marketing$spam <- cap(social_marketing$spam, 0.99)
+social_marketing$adult <- cap(social_marketing$adult, 0.99)
+row_sums <- rowSums(social_marketing)
+social_marketing_normalized <- sweep(social_marketing, 1, row_sums, "/")
+
+# Exploratory Data Analysis (EDA)
+
+ggplot(melt(social_marketing_normalized), aes(value)) +
+  geom_histogram(bins = 30, fill = "blue", alpha = 0.7) +
+  facet_wrap(~ variable, scales = "free_x")
+
+cor_matrix <- cor(social_marketing_normalized, use = "pairwise.complete.obs")
+corrplot(cor_matrix, method = "circle",
+         type = "upper", 
+         tl.col = "black", 
+         tl.srt = 45, 
+         tl.cex = 0.55, 
+         addrect = 5, 
+         rect.col = "black",
+         col = colorRampPalette(c("#BB4444", "#EE9999", "#FFFFFF", "#9999EE", "#4444BB"))(200),
+         is.corr = FALSE)
+
+```
+
+This graph shows how closely related different topics are based on social media data. Categories that are often talked about together, like 'home_and_garden' and 'family', show a strong positive connection with big, dark blue circles. Other topics like 'sports_playing' and 'health_nutrition' are somewhat related, with smaller, lighter blue circles. There are also topics that don't seem to be talked about together much at all; they have very light blue or no circles connecting them.
+
+## Step2: k-means and Elbow Method
+
+```{r ElbowMethod, echo=FALSE, message=FALSE, warning=FALSE}
+social_data <- read.csv("/Users/qxm/Desktop/Spring2024/Data Mining/HW_4/social_marketing.csv")
+social_data <- social_data[,-1] 
+social_data <- select_if(social_data, is.numeric)
+max_k <- 20 
+wcss_values <- numeric(max_k)
+set.seed(42) 
+for(k in 1:max_k) {
+  k_means_result <- kmeans(social_data, centers = k, nstart = 20)
+  wcss_values[k] <- k_means_result$tot.withinss
+}
+plot(1:max_k, wcss_values, type = "b", pch = 19, frame = FALSE, 
+     xlab = "Number of clusters K", ylab = "Total within-clusters sum of squares", main = "Elbow Plot")
+# Find the optimal number of clusters by looking for the "elbow"
+diff_wcss <- diff(wcss_values)
+diff2_wcss <- diff(diff_wcss)
+elbow_point <- which.max(diff2_wcss)
+optimal_clusters <- elbow_point + 1
+print(optimal_clusters)
+```
+
+After calculating, we can find out the the optimal number of clusters is 2.
+
+## Step3: PCA_Clustering
+
+First, we run a k-means clustering algorithm with a predetermined number of two clusters to categorize the social data into groups. We then perform Principal Component Analysis (PCA) on the same dataset to reduce its dimensions while retaining the essence of the original data.
+
+```{r PCA_Clustering, echo=FALSE, message=FALSE, warning=FALSE}
+optimal_clusters <- 2
+
+set.seed(42)
+k_means_final <- kmeans(social_data, centers = optimal_clusters, nstart = 25)
+
+pca_result <- prcomp(social_data, scale. = TRUE)
+
+pca_scores <- pca_result$x
+
+pca_data <- data.frame(pca_scores, cluster = k_means_final$cluster)
+
+ggplot(pca_data, aes(x = PC1, y = PC2, color = as.factor(cluster))) +
+  geom_point(alpha = 0.5) +
+  theme_minimal() +
+  labs(title = "PCA biplot with K-means Clustering", 
+       x = "Principal Component 1", 
+       y = "Principal Component 2", 
+       color = "Cluster")
+
+loadings <- pca_result$rotation[, 1:2] # Get the loadings for the first 11 components
+loadings_summary <- as.data.frame(loadings) %>%
+  rownames_to_column('Categories')
+
+plots <- lapply(1:2, function(i) {
+  pc_col <- paste0("PC", i)
+  ggplot(loadings_summary, aes_string(x = paste0("reorder(Categories, ", pc_col, ")"), y = pc_col)) +
+    geom_col() +
+    coord_flip() +
+    labs(y = pc_col, x = "") +
+    theme(axis.text.y = element_text(angle = 45, hjust = 1, size = 5)) # Adjust angle and justification here
+})
+grid.arrange(grobs = plots, ncol = 1)
+```
+
+## Discussion and Conclusion
+
+Principal Component 1 (PC1) suggests a significant negative relationship with variables such as 'sports_fan', 'photo_sharing', and 'personal_care'. This implies a group within the audience that is less likely to be engaged with sports-related content, photo sharing, or personal care topics. This segment might represent consumers more interested in areas less correlated with an active lifestyle or personal image.
+
+Principal Component 2 (PC2) shows a contrasting trend, where the same variables ('sports_fan', 'photo_sharing', 'personal_care') present a positive relationship. This indicates a segment of the audience that is more aligned with an active, healthy lifestyle, which may also be interested in sharing their experiences and tips online, suggesting a higher engagement with social media.
+
+### Key Segments Defined
+
+Discreet Consumers: Fitted with PC1, this segment is less vocal on social media about personal activities and interests. They may value privacy and be interested in products without public endorsement. Marketing strategies here may focus on direct benefits instead of the need for social sharing.
+
+Active Lifestyle Consumers: This segment fits with PC2, where interest in sports, health, and sharing content about personal care on social media is high. NutrientH20 can target this group with content and products related to fitness, health supplements, and active living.
+
+### Recommendations for NutrientH20
+
+1.Develop different campaigns for each segment. For Active Lifestyle Consumers, focus on social media engagement, sponsorships with sports influencers, and sharing success stories. For Discreet Consumers, focus on the quality of products and privacy-respecting marketing channels.
+
+2.Tailor the positioning of products to align with each segment's values—highlighting the social aspect and community for Active Lifestyle Consumers and emphasizing product efficacy for Discreet Consumers.
+
+3.Create content that appeals to the varied interests within each segment. Engage the Active Lifestyle Consumers with interactive and visually appealing posts, while providing informative and detailed content for Discreet Consumers.
+
+
+# Question 3: Association rules for grocery purchases
+We employed the arules to discover association rules that reveal the relationships between items purchased together to analyze the data from the grocery transactions. By setting the thresholds for support, confidence, and lift, we aimed to uncover meaningful patterns in shopping behavior.
+
+## Parameters and Methodology
+Support: A minimum support threshold of 0.001 was chosen to ensure we capture frequent enough patterns without focusing solely on the most common items.
+Confidence: We set a moderate confidence level of 0.25 to strike a balance between the reliability of the rule and the inclusion of less obvious associations.
+Lift: we focused on rules with the highest lift values after the generation of rules to spotlight the most significant associations. 
+
+## Associations Found
+Alcoholic Beverages Combination: The rule involving {bottled beer, red/blush wine} => {liquor} with a lift of 35.71 and confidence of 39.58% is indicative of a strong association between these beverages. It suggests that customers who purchase beer and wine are also likely to purchase liquor, pointing towards a trend in buying multiple types of alcoholic beverages together, possibly for events or gatherings.
+
+Baking Combination: Several rules indicate that customers purchasing certain baking ingredients like {curd, sugar} and {baking powder, sugar} are also likely to buy {flour}. The lifts of these rules range from 16.92 to 18.61, which could inform stores to place these items in close proximity to encourage baking-related purchases.
+
+Meal Combination: The rule {Instant food products, soda} => {hamburger meat} with a lift of nearly 19 shows that instant food products and soda are often purchased along with hamburger meat. This could be useful for stores to bundle these items for promotions or place them near each other to increase sales.
+
+## Visual Analysis
+The scatter plot visualizes the strength and reliability of these associations. 
+The plot shows a clustering of rules with higher lift values at the lower levels of support, which is expected since high-lift rules are often less common.
+
+The two-key plot shows that as the size of the itemset increases, the support generally decreases, which is again typical in market basket analysis.
+
+
+```{r Q3, results = FALSE, message=FALSE, echo=FALSE}
+
+# Read the grocery data
+groceries <- read.transactions("groceries.txt", format = "basket", sep = ",")
+
+# Apply the Apriori algorithm with adjusted parameters
+rules <- apriori(groceries,
+                 parameter = list(supp = 0.001, conf = 0.25, minlen = 2),
+                 control = list(verbose = FALSE))
+
+# Sort the rules by lift, and get the top rules based on lift
+rules_sorted_by_lift <- sort(rules, by = "lift", decreasing = TRUE)
+
+# Visualize the top 10 rules with the highest lift
+subrules <- head(rules_sorted_by_lift, 10)
+plot(subrules, method = "graph")
+
+# Convert rules to a data frame to inspect
+subrules_df <- as(subrules, "data.frame")
+
+# View the rules data frame
+print(subrules_df)
+
+# Plot with added jitter to reduce overplotting
+plot(rules, measure = c("support", "lift"), shading = "confidence", jitter = 0)
+
+# "Two key" plot with jitter
+plot(rules, method = 'two-key plot', jitter = 0)
+```
+
+```{r Q3.2, message=FALSE, echo=FALSE}
+# Create a kable of the top 10 rules
+top_rules_df <- head(subrules_df, 10)
+kable(top_rules_df[1:10, ], caption = "Top 10 Rules by Lift")
+```
+
+## Conclusions
+The identified rules make sense in the context of  shopping behavior. Items that are frequently purchased together, such as combinations of alcoholic beverages or components for baking, can be targeted for cross-promotions or placed together in-store to increase basket size. 
+The rules with high lift, especially those involving complementary items, validate the utility of the association rule mining in uncovering shopping basket patterns.
